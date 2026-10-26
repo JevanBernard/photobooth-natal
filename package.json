@@ -1,0 +1,17 @@
+{
+  "name": "fotobooth",
+  "version": "0.3.0",
+  "private": true,
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "dev": "node --env-file-if-exists=.env dev-server.js",
+    "start": "node --env-file-if-exists=.env dev-server.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0"
+  },
+  "devDependencies": {
+    "express": "^4.19.2",
+    "qrcode": "^1.5.4"
+  }
+}

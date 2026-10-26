@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    { "source": "/p/:id", "destination": "/api/p?id=:id" }
+  ],
+  "crons": [
+    { "path": "/api/cleanup", "schedule": "0 19 * * *" }
+  ]
+}

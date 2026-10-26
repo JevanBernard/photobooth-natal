@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Photobooth</title>
+<style>
+  :root { --bg:#111; --fg:#fff; --accent:#f5c542; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--fg);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif; overflow:hidden; user-select:none; }
+  .screen { position:absolute; inset:0; display:none; align-items:center; justify-content:center; flex-direction:column; gap:24px; padding:24px; text-align:center; }
+  .screen.active { display:flex; }
+  video { max-width:100%; max-height:70vh; border-radius:16px; background:#000; }
+  video.mirror { transform: scaleX(-1); }
+  button { font:inherit; font-size:clamp(20px,3.2vw,36px); padding:.7em 1.6em; border:0; border-radius:999px;
+    background:var(--accent); color:#111; font-weight:700; cursor:pointer; }
+  button:disabled { opacity:.4; cursor:default; }
+  button.ghost { background:transparent; color:var(--fg); border:2px solid #555; font-size:16px; padding:.45em 1em; }
+  h1 { margin:0; font-size:clamp(28px,5vw,56px); }
+  p { margin:0; opacity:.8; font-size:clamp(16px,2.2vw,24px); }
+  #count { position:absolute; font-size:30vmin; font-weight:800; text-shadow:0 0 40px #000; pointer-events:none; }
+  #flash { position:absolute; inset:0; background:#fff; opacity:0; pointer-events:none; transition:opacity .35s; }
+  #flash.on { opacity:.95; transition:none; }
+  .stage { position:relative; display:flex; align-items:center; justify-content:center; width:100%; }
+  #shotinfo { font-size:24px; opacity:.9; }
+  #qrbox { display:flex; gap:40px; align-items:center; justify-content:center; flex-wrap:wrap; }
+  #qrbox img.qr { width:min(38vmin,340px); background:#fff; padding:14px; border-radius:16px; }
+  #qrbox img.result { height:min(68vh,700px); aspect-ratio:9/16; object-fit:cover; border-radius:8px; box-shadow:0 8px 40px #000a; }
+  #link { font-size:14px; opacity:.6; word-break:break-all; max-width:340px; }
+  #status { position:absolute; top:10px; right:14px; font-size:14px; opacity:.75; max-width:60vw; text-align:right; z-index:5; }
+  .err { color:#ff8a8a; max-width:700px; }
+  #setup { position:absolute; left:14px; bottom:12px; font-size:14px; opacity:.8; text-align:left; max-width:90vw; }
+  #setup summary { cursor:pointer; opacity:.7; }
+  #setup .row { display:flex; gap:10px; align-items:center; margin-top:8px; flex-wrap:wrap; }
+  #setup input { background:#222; color:#fff; border:1px solid #555; border-radius:8px; padding:7px 10px; font:inherit; }
+  #setup small { opacity:.7; }
+</style>
+</head>
+<body>
+
+<div id="status"></div>
+
+<section id="s-start" class="screen active">
+  <h1 id="title">Photobooth</h1>
+  <p>Sentuh tombol untuk mulai foto</p>
+  <button id="btn-start" disabled>MULAI</button>
+  <p id="cam-err" class="err"></p>
+  <details id="setup">
+    <summary>Pengaturan operator</summary>
+    <div class="row">
+      <label>Upload key <input id="key" type="password" autocomplete="off" placeholder="sama dengan UPLOAD_KEY di server"></label>
+    </div>
+    <div class="row">
+      <button id="btn-folder" class="ghost">Pilih folder simpan</button>
+      <span id="folder-status">Belum dipilih — foto mentah &amp; salinan belum disimpan di laptop</span>
+    </div>
+    <div class="row"><small id="api-info"></small></div>
+  </details>
+</section>
+
+<section id="s-shoot" class="screen">
+  <div class="stage">
+    <video id="video" autoplay playsinline muted></video>
+    <div id="count"></div>
+    <div id="flash"></div>
+  </div>
+  <div id="shotinfo"></div>
+</section>
+
+<section id="s-process" class="screen">
+  <h1>Sedang memproses…</h1>
+  <p>Foto kamu hampir jadi</p>
+</section>
+
+<section id="s-result" class="screen">
+  <div id="qrbox">
+    <img id="img-result" class="result" alt="Hasil Story">
+    <div>
+      <img id="img-qr" class="qr" alt="QR">
+      <h1 style="margin-top:16px">Scan untuk unduh</h1>
+      <p>Story + 4 foto satuan</p>
+      <p id="link"></p>
+    </div>
+  </div>
+  <button id="btn-again">FOTO LAGI</button>
+</section>
+
+<script src="vendor/qrcode.js"></script>
+<script src="config.js"></script>
+<script>
+const C = window.BOOTH_CONFIG;
+const API = (C.apiBase || '').replace(/\/$/, '');
+const PUBLIC = (C.publicBase || C.apiBase || location.origin).replace(/\/$/, '');
+const $ = (id) => document.getElementById(id);
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+let stream, dirHandle = null, busy = false, resetTimer, resultUrl;
+const frames = {};
+const queue = [];
+let pumping = false, uploadedAny = false;
+const statusParts = { local: '', up: '', upErr: false, localErr: false };
+
+/* ---------- util ---------- */
+function show(name) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  $('s-' + name).classList.add('active');
+}
+function renderStatus() {
+  const el = $('status');
+  el.textContent = [statusParts.up, statusParts.local].filter(Boolean).join(' · ');
+  el.style.color = (statusParts.upErr || statusParts.localErr) ? '#ff8a8a' : 'inherit';
+}
+function setUp(msg, err) { statusParts.up = msg; statusParts.upErr = !!err; renderStatus(); }
+function setLocal(msg, err) { statusParts.local = msg; statusParts.localErr = !!err; renderStatus(); }
+function getKey() {
+  try { return localStorage.getItem('booth_key') || C.uploadKey || ''; } catch { return C.uploadKey || ''; }
+}
+function newId() { // 12 karakter acak, aman untuk URL
+  const b = new Uint8Array(9); crypto.getRandomValues(b);
+  return btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function stamp() {
+  const d = new Date(), p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+}
+function makeCanvas(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
+function toBlob(canvas, q) { return new Promise(res => canvas.toBlob(res, 'image/jpeg', q)); }
+
+/* ---------- frame ---------- */
+function loadImg(src) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = src + '?' + Date.now();
+  });
+}
+function fallbackStoryFrame() {
+  const S = C.story, c = makeCanvas(S.width, S.height), g = c.getContext('2d');
+  g.fillStyle = '#f5ecd9'; g.fillRect(0, 0, c.width, c.height);
+  S.slots.forEach(s => g.clearRect(s.x, s.y, s.w, s.h));
+  g.fillStyle = '#3a3226'; g.textAlign = 'center';
+  g.font = '700 72px system-ui, sans-serif';
+  g.fillText(C.eventName, c.width / 2, 1815);
+  g.font = '40px system-ui, sans-serif';
+  g.fillText(new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }), c.width / 2, 1870);
+  return c;
+}
+function fallbackPrintFrame() {
+  const P = C.print, c = makeCanvas(P.width, P.height), g = c.getContext('2d');
+  g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
+  g.clearRect(36, 36, c.width - 72, c.height - 72);
+  return c;
+}
+
+/* ---------- kamera ---------- */
+async function startCamera() {
+  const base = { width: { ideal: 1920 }, height: { ideal: 1080 } };
+  // Izin kamera diminta dulu supaya nama perangkat terbaca, lalu pilih webcam USB sesuai nama
+  const tmp = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+  tmp.getTracks().forEach(t => t.stop());
+  let deviceId;
+  if (C.cameraNameMatch) {
+    const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput');
+    const hit = devs.find(d => d.label.toLowerCase().includes(C.cameraNameMatch.toLowerCase()));
+    if (hit) deviceId = hit.deviceId;
+  }
+  stream = await navigator.mediaDevices.getUserMedia({
+    video: deviceId ? { ...base, deviceId: { exact: deviceId } } : base, audio: false
+  });
+  const v = $('video');
+  v.srcObject = stream;
+  v.classList.toggle('mirror', !!C.mirrorPreview);
+  await v.play();
+}
+async function countdown(n) {
+  const el = $('count');
+  for (let i = n; i > 0; i--) { el.textContent = i; await sleep(1000); }
+  el.textContent = '';
+}
+function flash() {
+  const f = $('flash'); f.classList.add('on');
+  requestAnimationFrame(() => requestAnimationFrame(() => f.classList.remove('on')));
+}
+function grab() { // satu frame mentah (tidak dibalik)
+  const v = $('video');
+  const c = makeCanvas(v.videoWidth, v.videoHeight);
+  c.getContext('2d').drawImage(v, 0, 0);
+  return c;
+}
+
+/* ---------- komposit ---------- */
+function drawCover(g, src, s) { // crop "cover" supaya tidak gepeng
+  const sr = src.width / src.height, dr = s.w / s.h;
+  let sw = src.width, sh = src.height, sx = 0, sy = 0;
+  if (sr > dr) { sw = src.height * dr; sx = (src.width - sw) / 2; }
+  else { sh = src.width / dr; sy = (src.height - sh) / 2; }
+  g.drawImage(src, sx, sy, sw, sh, s.x, s.y, s.w, s.h);
+}
+function composeStory(shots) {
+  const S = C.story, c = makeCanvas(S.width, S.height), g = c.getContext('2d');
+  g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
+  S.slots.forEach((s, i) => drawCover(g, shots[i], s));
+  g.drawImage(frames.story, 0, 0, c.width, c.height);
+  return toBlob(c, 0.88);
+}
+function composePrint(shot) {
+  const P = C.print, c = makeCanvas(P.width, P.height), g = c.getContext('2d');
+  drawCover(g, shot, { x: 0, y: 0, w: P.width, h: P.height });
+  g.drawImage(frames.print, 0, 0, P.width, P.height);
+  return toBlob(c, 0.9);
+}
+
+/* ---------- simpan lokal (foto mentah + salinan) ---------- */
+async function pickFolder() {
+  if (!window.showDirectoryPicker) { alert('Browser ini belum mendukung pilih folder. Pakai Chrome atau Edge di laptop.'); return; }
+  try {
+    dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+    $('folder-status').textContent = 'Folder: ' + dirHandle.name;
+  } catch (e) { /* dibatalkan */ }
+}
+async function saveLocal(id, files) {
+  if (!dirHandle) { setLocal('Folder simpan belum dipilih', true); return; }
+  try {
+    const dir = await dirHandle.getDirectoryHandle(`${stamp()}_${id}`, { create: true });
+    for (const [name, blob] of files) {
+      const fh = await dir.getFileHandle(name, { create: true });
+      const w = await fh.createWritable();
+      await w.write(blob); await w.close();
+    }
+    setLocal('Tersimpan di laptop ✓');
+  } catch (e) { console.error(e); setLocal('Gagal simpan di laptop: ' + e.message, true); }
+}
+
+/* ---------- antrean upload (tahan internet putus) ---------- */
+function enqueue(id, name, blob) { queue.push({ id, name, blob, tries: 0 }); pump(); }
+async function sendOne(job) {
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), 30000);
+  try {
+    const r = await fetch(`${API}/api/upload?id=${encodeURIComponent(job.id)}&name=${encodeURIComponent(job.name)}`, {
+      method: 'POST', headers: { 'Content-Type': 'image/jpeg', 'X-Upload-Key': getKey() }, body: job.blob, signal: ctl.signal
+    });
+    if (r.ok) return;
+    let msg = 'HTTP ' + r.status;
+    try { msg = (await r.json()).error || msg; } catch {}
+    const e = new Error(msg);
+    e.fatal = (r.status === 400 || r.status === 413);
+    throw e;
+  } finally { clearTimeout(t); }
+}
+async function pump() {
+  if (pumping) return; pumping = true;
+  while (queue.length) {
+    const job = queue[0];
+    try {
+      await sendOne(job);
+      queue.shift(); uploadedAny = true;
+      setUp(queue.length ? `Mengunggah… sisa ${queue.length} file` : 'Semua foto terupload ✓');
+    } catch (e) {
+      if (e.fatal) { queue.shift(); setUp(`File dilewati (${e.message})`, true); continue; }
+      job.tries++;
+      setUp(`Menunggu koneksi/server (${e.message}) · sisa ${queue.length} file`, true);
+      await sleep(Math.min(30000, 2000 * job.tries));
+    }
+  }
+  pumping = false;
+}
+
+/* ---------- alur sesi ---------- */
+function showResult(id, storyBlob) {
+  if (resultUrl) URL.revokeObjectURL(resultUrl);
+  resultUrl = URL.createObjectURL(storyBlob);
+  $('img-result').src = resultUrl;
+  const url = `${PUBLIC}/p/${id}`;
+  $('link').textContent = url.replace(/^https?:\/\//, '');
+  $('img-qr').removeAttribute('src');
+  QRCode.toDataURL(url, { width: 600, margin: 1 }).then(u => { $('img-qr').src = u; });
+  show('result');
+  clearTimeout(resetTimer);
+  resetTimer = setTimeout(reset, C.autoResetSeconds * 1000);
+}
+
+async function runSession() {
+  if (busy) return; busy = true;
+  $('cam-err').textContent = '';
+  try { if (!stream) await startCamera(); }
+  catch (e) { $('cam-err').textContent = 'Kamera tidak bisa diakses: ' + e.message; busy = false; return; }
+  try {
+    show('shoot');
+    const N = C.story.slots.length, shots = [];
+    for (let i = 0; i < N; i++) {
+      $('shotinfo').textContent = `Foto ${i + 1} dari ${N}`;
+      await countdown(C.countdownSeconds);
+      flash();
+      shots.push(grab());
+      await sleep(C.pauseBetweenShots * 1000);
+    }
+    show('process');
+    const id = newId();
+    const files = [['story.jpg', await composeStory(shots)]];
+    for (let i = 0; i < N; i++) files.push([`print-${i + 1}.jpg`, await composePrint(shots[i])]);
+    const raws = [];
+    for (let i = 0; i < N; i++) raws.push([`raw-${i + 1}.jpg`, await toBlob(shots[i], 0.95)]);
+
+    showResult(id, files[0][1]);
+    files.forEach(([n, b]) => enqueue(id, n, b));
+    saveLocal(id, [...files, ...raws]);
+  } catch (e) {
+    console.error(e);
+    $('cam-err').textContent = 'Terjadi kesalahan: ' + e.message;
+    show('start');
+  } finally { busy = false; }
+}
+
+function reset() { clearTimeout(resetTimer); show('start'); }
+
+/* ---------- init ---------- */
+$('btn-start').onclick = runSession;
+$('btn-again').onclick = reset;
+$('btn-folder').onclick = pickFolder;
+$('key').value = getKey();
+$('key').oninput = (e) => { try { localStorage.setItem('booth_key', e.target.value.trim()); } catch {} };
+$('title').textContent = C.eventName;
+document.title = C.eventName + ' — Kiosk';
+$('api-info').textContent = `Server upload: ${API || '(server ini)'} · Link di QR: ${PUBLIC}/p/…`;
+
+(async () => {
+  const [story, print] = await Promise.all([loadImg('frame.png'), loadImg('frame-print.png')]);
+  frames.story = story || fallbackStoryFrame();
+  frames.print = print || fallbackPrintFrame();
+  $('btn-start').disabled = false;
+})();
+</script>
+</body>
+</html>
