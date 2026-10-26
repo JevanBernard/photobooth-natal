@@ -1,12 +1,12 @@
 // ===== Pengaturan booth =====
 // Semua ukuran dalam piksel.
 window.BOOTH_CONFIG = {
-  eventName: 'Photobooth',   // tampil di layar kiosk (nama di halaman tamu diatur lewat EVENT_NAME di server)
+  eventName: 'Photobooth Natal', // tampil di layar kiosk (nama di halaman tamu diatur lewat EVENT_NAME di server)
   expireDays: 7,             // hanya untuk teks di layar; yang menghapus foto adalah server (EXPIRE_DAYS)
 
   // Alamat server upload. Kosong = server yang sama dengan halaman kiosk (mode uji lokal).
-  // Untuk event: isi dengan alamat Worker Cloudflare-mu, misalnya 'https://fotobooth.namamu.workers.dev'
-  apiBase: '',
+  // Untuk event: isi dengan alamat Vercel-mu (tanpa garis miring di akhir).
+  apiBase: 'https://photobooth-natal.vercel.app',
   // Alamat yang ditulis di QR. Kosong = sama dengan apiBase (atau alamat halaman ini).
   publicBase: '',
   // Upload key bisa diisi di sini, atau lebih aman lewat "Pengaturan operator" di layar kiosk.
