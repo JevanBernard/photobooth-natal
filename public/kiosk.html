@@ -2,89 +2,207 @@
 <html lang="id">
 <head>
 <meta charset="utf-8">
+<!-- Kiosk layar sentuh: zoom dimatikan dengan sengaja supaya tamu tidak mencubit layar booth -->
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="theme-color" content="#050c32">
 <title>Photobooth</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preload" href="fonts/cinzel.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="brand/dayspring.jpg" as="image">
+<link rel="preload" href="fonts/instrument-sans.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="theme.css">
 <style>
-  :root { --bg:#111; --fg:#fff; --accent:#f5c542; }
-  * { box-sizing: border-box; }
-  html, body { margin:0; height:100%; background:var(--bg); color:var(--fg);
-    font-family: system-ui, -apple-system, "Segoe UI", sans-serif; overflow:hidden; user-select:none; }
-  .screen { position:absolute; inset:0; display:none; align-items:center; justify-content:center; flex-direction:column; gap:24px; padding:24px; text-align:center; }
-  .screen.active { display:flex; }
-  video { max-width:100%; max-height:70vh; border-radius:16px; background:#000; }
+  html, body { height: 100%; overflow: hidden; }
+  body { user-select: none; -webkit-user-select: none; font-size: clamp(16px, 1.15vw + 0.4vh, 22px); }
+  :root { --pad: clamp(24px, 3.6vw, 64px); }
+
+  /* bingkai sudut: nama event, status upload, pengaturan operator */
+  .corner { position: fixed; z-index: 20; }
+  .corner.tl { top: var(--pad); left: var(--pad); }
+  .corner.tr { top: var(--pad); right: var(--pad); max-width: 46vw; text-align: right; }
+  .corner.br { bottom: calc(var(--pad) * 0.55); right: var(--pad); margin: 0; }
+  .corner .star { color: var(--candle); }
+  #status.err { color: var(--alert); }
+
+  /* layar: berganti dengan crossfade, layar tidak aktif di-inert */
+  .screen { position: fixed; inset: 0; padding: calc(var(--pad) * 2.1) var(--pad) var(--pad);
+    opacity: 0; visibility: hidden; transition: opacity var(--dur-base) var(--ease-out), visibility 0s linear var(--dur-base); }
+  .screen.active { opacity: 1; visibility: visible; transition: opacity var(--dur-base) var(--ease-out), visibility 0s; }
+
+  /* ===== 1. Layar awal: key visual The Dayspring penuh layar ===== */
+  #s-start { padding: 0; }
+  /* key visual digeser sedikit ke atas supaya logo tidak tertimpa bilah bawah */
+  .kv { position: absolute; left: 0; top: -10%; width: 100%; height: 110%; object-fit: cover; object-position: center top; }
+  #s-start::after { content: ""; position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(180deg, oklch(18% 0.075 268 / 0.55) 0%, transparent 18%, transparent 58%,
+      oklch(18% 0.075 268 / 0.82) 80%, oklch(18% 0.075 268 / 0.96) 100%); }
+  .start-bar { position: absolute; z-index: 1; left: var(--pad); right: var(--pad); bottom: calc(var(--pad) * 1.5);
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--pad); align-items: end; }
+  .start-bar h1 { font-size: clamp(1.6rem, 1rem + 1.8vw, 3rem); margin: 0.3em 0 0; }
+  .steps { list-style: none; padding: 0; margin: 1.1em 0 0; display: flex; flex-wrap: wrap; gap: 0.4em 2.2em; color: var(--paper-dim); }
+  .steps li { display: flex; gap: 0.7em; align-items: baseline; }
+  .steps .label { color: var(--candle); }
+  .cta { display: grid; justify-items: center; gap: 0.7em; }
+  .btn-xl { font-size: clamp(20px, 1.6vw + 0.6vh, 32px); padding: 0.9em 2.1em; min-height: 64px; }
+  kbd { font: 600 0.8em var(--sans); padding: 0.15em 0.55em; border: 1px solid var(--line); border-radius: var(--r-s); color: var(--paper-dim); }
+  .hint { color: var(--paper-dim); font-size: var(--step--1); }
+  #cam-err { color: var(--alert); margin: 0.8em 0 0; max-width: 40em; min-height: 1.5em; }
+
+  /* ===== 2. Sesi foto ===== */
+  #s-shoot { display: grid; grid-template-columns: minmax(0, 1fr) clamp(140px, 15vw, 260px); gap: var(--pad); align-items: center; }
+  .stage-col { display: grid; gap: 1em; justify-items: center; }
+  .stage { position: relative; width: min(100%, calc((100dvh - var(--pad) * 5) * 16 / 9)); aspect-ratio: 16 / 9;
+    border-radius: var(--r-l); overflow: hidden; background: #000;
+    box-shadow: 0 0 0 1px oklch(83% 0.14 78 / 0.35), 0 40px 80px -30px oklch(0% 0 0 / 0.8); }
+  .stage video { width: 100%; height: 100%; object-fit: cover; display: block; }
   video.mirror { transform: scaleX(-1); }
-  button { font:inherit; font-size:clamp(20px,3.2vw,36px); padding:.7em 1.6em; border:0; border-radius:999px;
-    background:var(--accent); color:#111; font-weight:700; cursor:pointer; }
-  button:disabled { opacity:.4; cursor:default; }
-  button.ghost { background:transparent; color:var(--fg); border:2px solid #555; font-size:16px; padding:.45em 1em; }
-  h1 { margin:0; font-size:clamp(28px,5vw,56px); }
-  p { margin:0; opacity:.8; font-size:clamp(16px,2.2vw,24px); }
-  #count { position:absolute; font-size:30vmin; font-weight:800; text-shadow:0 0 40px #000; pointer-events:none; }
-  #flash { position:absolute; inset:0; background:#fff; opacity:0; pointer-events:none; transition:opacity .35s; }
-  #flash.on { opacity:.95; transition:none; }
-  .stage { position:relative; display:flex; align-items:center; justify-content:center; width:100%; }
-  #shotinfo { font-size:24px; opacity:.9; }
-  #qrbox { display:flex; gap:40px; align-items:center; justify-content:center; flex-wrap:wrap; }
-  #qrbox img.qr { width:min(38vmin,340px); background:#fff; padding:14px; border-radius:16px; }
-  #qrbox img.result { height:min(68vh,700px); aspect-ratio:9/16; object-fit:cover; border-radius:8px; box-shadow:0 8px 40px #000a; }
-  #link { font-size:14px; opacity:.6; word-break:break-all; max-width:340px; }
-  #status { position:absolute; top:10px; right:14px; font-size:14px; opacity:.75; max-width:60vw; text-align:right; z-index:5; }
-  .err { color:#ff8a8a; max-width:700px; }
-  #setup { position:absolute; left:14px; bottom:12px; font-size:14px; opacity:.8; text-align:left; max-width:90vw; }
-  #setup summary { cursor:pointer; opacity:.7; }
-  #setup .row { display:flex; gap:10px; align-items:center; margin-top:8px; flex-wrap:wrap; }
-  #setup input { background:#222; color:#fff; border:1px solid #555; border-radius:8px; padding:7px 10px; font:inherit; }
-  #setup small { opacity:.7; }
+  #count { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none;
+    font: 600 min(38vh, 22vw)/1 var(--display-face); color: var(--glow);
+    text-shadow: 0 0 40px oklch(85% 0.14 78 / 0.55), 0 4px 60px oklch(0% 0 0 / 0.6); }
+  #flash { position: absolute; inset: 0; background: var(--paper); opacity: 0; pointer-events: none; transition: opacity 0.4s var(--ease-out); }
+  #flash.on { opacity: 0.95; transition: none; }
+  .shoot-meta { display: flex; gap: 2em; justify-content: space-between; width: min(100%, calc((100dvh - var(--pad) * 5) * 16 / 9)); }
+  #shotinfo { color: var(--paper); }
+  .look { color: var(--candle); }
+
+  .rail { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
+  .rail li { position: relative; aspect-ratio: 16 / 9; border-radius: var(--r-s); border: 1.5px dashed var(--line);
+    transition: border-color var(--dur-fast) var(--ease-out); }
+  .rail li.now { border: 1.5px solid var(--candle); }
+  .rail li.filled { border: 1.5px solid transparent; }
+  .rail canvas { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: inherit; opacity: 0; }
+  .rail li.filled canvas { opacity: 1; animation: drop var(--dur-base) var(--ease-out); }
+  .rail .label { position: absolute; left: 8px; top: 6px; font-size: 0.72rem; z-index: 1; text-shadow: 0 1px 6px oklch(0% 0 0 / 0.6); }
+  @keyframes drop { from { transform: scale(1.08); opacity: 0; } }
+
+  /* ===== 3. Proses ===== */
+  #s-process { display: grid; place-content: center; text-align: center; }
+  #s-process h1 { font-size: var(--step-4); margin-top: 0.3em; }
+
+  /* ===== 4. Hasil: kartu tercetak + QR ===== */
+  #s-result { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: calc(var(--pad) * 1.4); align-items: center; justify-content: center; }
+  .result-card { height: calc(100dvh - var(--pad) * 3.4); aspect-ratio: 9 / 16; border-radius: var(--r-s);
+    box-shadow: 0 40px 80px -30px oklch(0% 0 0 / 0.7); background: var(--night-2); }
+  .result-card img { display: block; width: 100%; height: 100%; object-fit: cover; }
+  .take { max-width: 36em; }
+  .take h1 { font-size: clamp(2.4rem, 1.4rem + 3.4vw, 5.4rem); margin: 0.35em 0 0; }
+  .qr-row { display: flex; align-items: center; gap: 1.6em; margin-top: 1.8em; }
+  .qr-plate { flex: none; width: min(30vh, 300px); aspect-ratio: 1; padding: 14px; border-radius: var(--r-l); background: #fff; }
+  .qr-plate img { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
+  .qr-row p { margin: 0; color: var(--paper-dim); }
+  #link { display: block; margin-top: 0.6em; font-size: var(--step--1); color: var(--paper-dim); word-break: break-all; }
+  .again { display: flex; align-items: center; gap: 1.4em; margin-top: 2.2em; flex-wrap: wrap; }
+  .reset { display: flex; align-items: center; gap: 0.8em; color: var(--paper-dim); font-size: var(--step--1); }
+  .reset .bar { width: 7em; height: 3px; border-radius: 3px; background: var(--line); overflow: hidden; }
+  .reset .bar i { display: block; height: 100%; background: var(--candle); transform-origin: left; }
+  .take .reveal { opacity: 0; }
+  .is-shown .take .reveal { animation: rise var(--dur-slow) var(--ease-out) both; animation-delay: calc(0.7s + var(--i) * 0.08s); }
+  @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+
+  /* ===== Pengaturan operator ===== */
+  body:not([data-screen="start"]) #setup { display: none; }
+  #setup { position: fixed; left: var(--pad); bottom: calc(var(--pad) * 0.5); z-index: 30; font-size: 14px; max-width: min(640px, 90vw);
+    color: var(--paper-dim); user-select: text; }
+  #setup summary { cursor: pointer; list-style: none; min-height: 44px; display: inline-flex; align-items: center; opacity: 0.55; }
+  #setup summary::-webkit-details-marker { display: none; }
+  #setup[open] { background: var(--night-2); border: 1px solid var(--line); border-radius: var(--r-l); padding: 6px 18px 16px; }
+  #setup[open] summary { opacity: 1; }
+  #setup .row { display: flex; gap: 10px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
+  #setup input { background: var(--night); color: var(--paper); border: 1px solid var(--line); border-radius: var(--r-s);
+    padding: 10px 12px; font: inherit; min-width: 22em; }
+  #setup input:focus-visible { border-color: var(--candle); }
+  #setup .btn { font-size: 14px; min-height: 40px; padding: 0.5em 1.1em; }
+  #setup small { font-size: 12px; }
+
+  /* layar pendek / sempit (laptop 1366×768, tablet portrait) */
+  @media (max-aspect-ratio: 4/3) {
+    .start-bar { grid-template-columns: 1fr; justify-items: start; }
+    #s-shoot { grid-template-columns: 1fr; }
+    .rail { grid-template-columns: repeat(4, 1fr); }
+    #s-result { grid-template-columns: 1fr; justify-items: center; text-align: center; }
+    .result-card { height: 46dvh; }
+    .qr-row, .again { justify-content: center; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .take .reveal { opacity: 1; }
+  }
 </style>
 </head>
 <body>
 
-<div id="status"></div>
+<div class="corner tl label"><span class="star" aria-hidden="true">✦</span> <span id="event-label">Photobooth</span></div>
+<div class="corner tr label" id="status" role="status" aria-live="polite"></div>
+<p class="corner br credit">Dikembangkan oleh <b>JC Flow Media</b></p>
 
-<section id="s-start" class="screen active">
-  <h1 id="title">Photobooth</h1>
-  <p>Sentuh tombol untuk mulai foto</p>
-  <button id="btn-start" disabled>MULAI</button>
-  <p id="cam-err" class="err"></p>
-  <details id="setup">
-    <summary>Pengaturan operator</summary>
-    <div class="row">
-      <label>Upload key <input id="key" type="password" autocomplete="off" placeholder="sama dengan UPLOAD_KEY di server"></label>
-    </div>
-    <div class="row">
-      <button id="btn-folder" class="ghost">Pilih folder simpan</button>
-      <span id="folder-status">Belum dipilih — foto mentah &amp; salinan belum disimpan di laptop</span>
-    </div>
-    <div class="row"><small id="api-info"></small></div>
-  </details>
-</section>
-
-<section id="s-shoot" class="screen">
-  <div class="stage">
-    <video id="video" autoplay playsinline muted></video>
-    <div id="count"></div>
-    <div id="flash"></div>
-  </div>
-  <div id="shotinfo"></div>
-</section>
-
-<section id="s-process" class="screen">
-  <h1>Sedang memproses…</h1>
-  <p>Foto kamu hampir jadi</p>
-</section>
-
-<section id="s-result" class="screen">
-  <div id="qrbox">
-    <img id="img-result" class="result" alt="Hasil Story">
+<section id="s-start" class="screen active" aria-labelledby="title">
+  <img class="kv" src="brand/dayspring.jpg" alt="The Dayspring — tema Natal" width="1920" height="1080">
+  <div class="start-bar">
     <div>
-      <img id="img-qr" class="qr" alt="QR">
-      <h1 style="margin-top:16px">Scan untuk unduh</h1>
-      <p>Story + 4 foto satuan</p>
-      <p id="link"></p>
+      <h1 id="title" class="display">Empat pose, <em>satu kartu Natal.</em></h1>
+      <ol class="steps">
+        <li><span class="label num">01</span><span>Tekan mulai, lihat ke kamera</span></li>
+        <li><span class="label num">02</span><span>Hitungan <span id="cd-sec">3</span> detik tiap foto</span></li>
+        <li><span class="label num">03</span><span>Scan QR, simpan di HP</span></li>
+      </ol>
+      <p id="cam-err" role="alert"></p>
+    </div>
+    <div class="cta">
+      <button id="btn-start" class="btn btn-primary btn-xl" type="button" disabled>Mulai foto</button>
+      <span class="hint">atau tekan <kbd>Spasi</kbd></span>
     </div>
   </div>
-  <button id="btn-again">FOTO LAGI</button>
 </section>
+
+<section id="s-shoot" class="screen" aria-label="Sesi foto">
+  <div class="stage-col">
+    <div class="stage">
+      <video id="video" autoplay playsinline muted></video>
+      <div id="count" class="num" aria-live="assertive"></div>
+      <div id="flash"></div>
+    </div>
+    <div class="shoot-meta">
+      <span id="shotinfo" class="label"></span>
+      <span class="label look">↑ Lihat ke kamera</span>
+    </div>
+  </div>
+  <ol class="rail" id="rail" aria-label="Foto yang sudah diambil"></ol>
+</section>
+
+<section id="s-process" class="screen" aria-labelledby="proc-title">
+  <p class="label">Mencetak</p>
+  <h1 id="proc-title" class="display">Sedang menyusun <em>kartumu…</em></h1>
+</section>
+
+<section id="s-result" class="screen" aria-labelledby="res-title">
+  <figure class="result-card print-in" id="result-card" style="margin:0">
+    <img id="img-result" alt="Kartu Story berisi empat fotomu" width="1080" height="1920">
+  </figure>
+  <div class="take">
+    <p class="label reveal" style="--i:0">Kartumu sudah jadi</p>
+    <h1 id="res-title" class="display reveal" style="--i:1">Scan, lalu <em>bawa pulang.</em></h1>
+    <div class="qr-row reveal" style="--i:2">
+      <div class="qr-plate"><img id="img-qr" alt="Kode QR menuju halaman unduh fotomu"></div>
+      <p>Story untuk Instagram dan 4 foto satuan siap cetak. Link aktif <span id="days">7</span> hari.
+        <span id="link"></span></p>
+    </div>
+    <div class="again reveal" style="--i:3">
+      <button id="btn-again" class="btn btn-ghost btn-xl" type="button">Foto lagi</button>
+      <div class="reset" aria-hidden="true"><span class="bar"><i id="reset-bar"></i></span><span>kembali ke awal</span></div>
+    </div>
+  </div>
+</section>
+
+<details id="setup">
+  <summary>Pengaturan operator</summary>
+  <div class="row">
+    <label>Upload key <input id="key" type="password" autocomplete="off" placeholder="sama dengan UPLOAD_KEY di server"></label>
+  </div>
+  <div class="row">
+    <button id="btn-folder" class="btn btn-ghost" type="button">Pilih folder simpan</button>
+    <span id="folder-status">Belum dipilih — foto mentah &amp; salinan belum disimpan di laptop</span>
+  </div>
+  <div class="row"><small id="api-info"></small></div>
+</details>
 
 <script src="vendor/qrcode.js"></script>
 <script src="config.js"></script>
@@ -94,8 +212,13 @@ const API = (C.apiBase || '').replace(/\/$/, '');
 const PUBLIC = (C.publicBase || C.apiBase || location.origin).replace(/\/$/, '');
 const $ = (id) => document.getElementById(id);
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const reduced = matchMedia('(prefers-reduced-motion: reduce)');
 
-let stream, dirHandle = null, busy = false, resetTimer, resultUrl;
+// Warna bingkai cadangan (sama dengan token di theme.css, dalam hex untuk canvas)
+const INK = { night: '#050c32', night2: '#0d1d4c', paper: '#faf1df', gold: '#f9bb51' };
+const brand = {};
+
+let stream, dirHandle = null, busy = false, resetTimer, resultUrl, current = 'start';
 const frames = {};
 const queue = [];
 let pumping = false, uploadedAny = false;
@@ -103,13 +226,18 @@ const statusParts = { local: '', up: '', upErr: false, localErr: false };
 
 /* ---------- util ---------- */
 function show(name) {
-  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-  $('s-' + name).classList.add('active');
+  document.querySelectorAll('.screen').forEach(s => {
+    const on = s.id === 's-' + name;
+    s.classList.toggle('active', on);
+    s.inert = !on;
+  });
+  current = name;
+  document.body.dataset.screen = name;
 }
 function renderStatus() {
   const el = $('status');
   el.textContent = [statusParts.up, statusParts.local].filter(Boolean).join(' · ');
-  el.style.color = (statusParts.upErr || statusParts.localErr) ? '#ff8a8a' : 'inherit';
+  el.classList.toggle('err', statusParts.upErr || statusParts.localErr);
 }
 function setUp(msg, err) { statusParts.up = msg; statusParts.upErr = !!err; renderStatus(); }
 function setLocal(msg, err) { statusParts.local = msg; statusParts.localErr = !!err; renderStatus(); }
@@ -136,20 +264,51 @@ function loadImg(src) {
     img.src = src + '?' + Date.now();
   });
 }
+// Dipakai kalau public/frame.png belum ada: langit malam The Dayspring, garis emas di tiap foto,
+// logo dari key visual di bagian bawah
 function fallbackStoryFrame() {
   const S = C.story, c = makeCanvas(S.width, S.height), g = c.getContext('2d');
-  g.fillStyle = '#f5ecd9'; g.fillRect(0, 0, c.width, c.height);
+  const W = c.width, H = c.height;
+  const bg = g.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, INK.night); bg.addColorStop(0.55, INK.night2); bg.addColorStop(1, INK.night);
+  g.fillStyle = bg; g.fillRect(0, 0, W, H);
+  const glow = g.createRadialGradient(W / 2, H * 1.02, 0, W / 2, H * 1.02, W * 0.75);
+  glow.addColorStop(0, 'rgba(255, 214, 130, 0.55)'); glow.addColorStop(1, 'rgba(255, 214, 130, 0)');
+  g.fillStyle = glow; g.fillRect(0, 0, W, H);
+  if (brand.sky) { // peta bintang, "cover"
+    const sh = H, sw = sh * brand.sky.width / brand.sky.height;
+    g.globalAlpha = 0.9; g.drawImage(brand.sky, (W - sw) / 2, 0, sw, sh); g.globalAlpha = 1;
+  }
+  g.strokeStyle = INK.gold; g.lineWidth = 2;
+  S.slots.forEach(s => g.strokeRect(s.x - 9, s.y - 9, s.w + 18, s.h + 18));
   S.slots.forEach(s => g.clearRect(s.x, s.y, s.w, s.h));
-  g.fillStyle = '#3a3226'; g.textAlign = 'center';
-  g.font = '700 72px system-ui, sans-serif';
-  g.fillText(C.eventName, c.width / 2, 1815);
-  g.font = '40px system-ui, sans-serif';
-  g.fillText(new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }), c.width / 2, 1870);
+
+  const last = S.slots[S.slots.length - 1], top = last.y + last.h + 14, room = H - top - 50;
+  if (brand.kv) { // potong logo "THE DAYSPRING" dari key visual, tepinya dipudarkan
+    const crop = { x: 380, y: 340, w: 1160, h: 440 };
+    const h = Math.min(room, 230), w = h * crop.w / crop.h;
+    const off = makeCanvas(w, h), o = off.getContext('2d');
+    o.drawImage(brand.kv, crop.x, crop.y, crop.w, crop.h, 0, 0, w, h);
+    const m = o.createRadialGradient(w / 2, h / 2, h * 0.3, w / 2, h / 2, w / 2);
+    m.addColorStop(0, 'rgba(0,0,0,1)'); m.addColorStop(0.75, 'rgba(0,0,0,1)'); m.addColorStop(1, 'rgba(0,0,0,0)');
+    o.globalCompositeOperation = 'destination-in'; o.fillStyle = m; o.fillRect(0, 0, w, h);
+    g.drawImage(off, (W - w) / 2, top);
+  } else {
+    g.textAlign = 'center'; g.fillStyle = INK.gold;
+    g.font = '600 60px Cinzel, "Times New Roman", serif';
+    g.fillText(C.eventName, W / 2, top + room / 2 + 20);
+  }
+  g.textAlign = 'center'; g.fillStyle = INK.paper;
+  g.font = '600 22px "Instrument Sans", Arial, sans-serif';
+  if ('letterSpacing' in g) g.letterSpacing = '6px';
+  const date = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }).toUpperCase();
+  g.fillText('✦  ' + date + '  ✦', W / 2, H - 34);
   return c;
 }
 function fallbackPrintFrame() {
   const P = C.print, c = makeCanvas(P.width, P.height), g = c.getContext('2d');
-  g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
+  g.fillStyle = INK.night; g.fillRect(0, 0, c.width, c.height);
+  g.strokeStyle = INK.gold; g.lineWidth = 3; g.strokeRect(22, 22, c.width - 44, c.height - 44);
   g.clearRect(36, 36, c.width - 72, c.height - 72);
   return c;
 }
@@ -172,11 +331,24 @@ async function startCamera() {
   const v = $('video');
   v.srcObject = stream;
   v.classList.toggle('mirror', !!C.mirrorPreview);
-  await v.play();
+  await v.play().catch(() => {});
+}
+// Kalau izin kamera sudah pernah diberikan, kamera disiapkan lebih dulu supaya sesi mulai tanpa jeda
+async function warmCamera() {
+  try {
+    const p = await navigator.permissions.query({ name: 'camera' });
+    if (p.state === 'granted') await startCamera();
+  } catch (e) { /* tunggu tombol mulai */ }
 }
 async function countdown(n) {
   const el = $('count');
-  for (let i = n; i > 0; i--) { el.textContent = i; await sleep(1000); }
+  for (let i = n; i > 0; i--) {
+    el.textContent = i;
+    if (!reduced.matches) el.animate(
+      [{ transform: 'scale(1.35)', opacity: 0 }, { transform: 'scale(1)', opacity: 1, offset: 0.25 }, { transform: 'scale(0.92)', opacity: 0.85 }],
+      { duration: 1000, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' });
+    await sleep(1000);
+  }
   el.textContent = '';
 }
 function flash() {
@@ -188,6 +360,22 @@ function grab() { // satu frame mentah (tidak dibalik)
   const c = makeCanvas(v.videoWidth, v.videoHeight);
   c.getContext('2d').drawImage(v, 0, 0);
   return c;
+}
+
+/* ---------- rel foto (progres 4 pose) ---------- */
+function buildRail(n) {
+  $('rail').innerHTML = Array.from({ length: n }, (_, i) =>
+    `<li><span class="label num">${String(i + 1).padStart(2, '0')}</span><canvas width="320" height="180"></canvas></li>`).join('');
+}
+function markRail(i, shot) {
+  const items = $('rail').children;
+  [...items].forEach((li, k) => li.classList.toggle('now', k === i && !shot));
+  if (shot) {
+    const cv = items[i].querySelector('canvas'), g = cv.getContext('2d');
+    if (C.mirrorPreview) { g.translate(cv.width, 0); g.scale(-1, 1); } // cocok dengan pratinjau cermin
+    drawCover(g, shot, { x: 0, y: 0, w: cv.width, h: cv.height });
+    items[i].classList.add('filled');
+  }
 }
 
 /* ---------- komposit ---------- */
@@ -272,14 +460,27 @@ async function pump() {
 function showResult(id, storyBlob) {
   if (resultUrl) URL.revokeObjectURL(resultUrl);
   resultUrl = URL.createObjectURL(storyBlob);
-  $('img-result').src = resultUrl;
+  const card = $('result-card'), img = $('img-result');
+  card.classList.remove('is-printing');
+  $('s-result').classList.remove('is-shown');
+  img.src = resultUrl;
   const url = `${PUBLIC}/p/${id}`;
   $('link').textContent = url.replace(/^https?:\/\//, '');
   $('img-qr').removeAttribute('src');
   QRCode.toDataURL(url, { width: 600, margin: 1 }).then(u => { $('img-qr').src = u; });
   show('result');
+  // Momen andalan: kartu naik dan "tercuci", lalu QR menyusul
+  img.decode().catch(() => {}).then(() => {
+    void card.offsetWidth;
+    card.classList.add('is-printing');
+    $('s-result').classList.add('is-shown');
+  });
+  const bar = $('reset-bar');
+  bar.getAnimations().forEach(a => a.cancel());
+  bar.animate([{ transform: 'scaleX(1)' }, { transform: 'scaleX(0)' }], { duration: C.autoResetSeconds * 1000, easing: 'linear', fill: 'forwards' });
   clearTimeout(resetTimer);
   resetTimer = setTimeout(reset, C.autoResetSeconds * 1000);
+  $('btn-again').focus({ preventScroll: true });
 }
 
 async function runSession() {
@@ -288,13 +489,17 @@ async function runSession() {
   try { if (!stream) await startCamera(); }
   catch (e) { $('cam-err').textContent = 'Kamera tidak bisa diakses: ' + e.message; busy = false; return; }
   try {
-    show('shoot');
     const N = C.story.slots.length, shots = [];
+    buildRail(N);
+    show('shoot');
     for (let i = 0; i < N; i++) {
       $('shotinfo').textContent = `Foto ${i + 1} dari ${N}`;
+      markRail(i);
       await countdown(C.countdownSeconds);
       flash();
-      shots.push(grab());
+      const shot = grab();
+      shots.push(shot);
+      markRail(i, shot);
       await sleep(C.pauseBetweenShots * 1000);
     }
     show('process');
@@ -314,7 +519,7 @@ async function runSession() {
   } finally { busy = false; }
 }
 
-function reset() { clearTimeout(resetTimer); show('start'); }
+function reset() { clearTimeout(resetTimer); show('start'); $('btn-start').focus({ preventScroll: true }); }
 
 /* ---------- init ---------- */
 $('btn-start').onclick = runSession;
@@ -322,15 +527,32 @@ $('btn-again').onclick = reset;
 $('btn-folder').onclick = pickFolder;
 $('key').value = getKey();
 $('key').oninput = (e) => { try { localStorage.setItem('booth_key', e.target.value.trim()); } catch {} };
-$('title').textContent = C.eventName;
+$('event-label').textContent = C.eventName;
+$('cd-sec').textContent = C.countdownSeconds;
+$('days').textContent = C.expireDays;
 document.title = C.eventName + ' — Kiosk';
 $('api-info').textContent = `Server upload: ${API || '(server ini)'} · Link di QR: ${PUBLIC}/p/…`;
+show('start');
+
+// Spasi / Enter: tombol fisik booth (keyboard atau tombol USB) bisa memulai sesi
+addEventListener('keydown', (e) => {
+  if (e.key !== ' ' && e.key !== 'Enter') return;
+  if (e.target.closest && e.target.closest('input, button, summary, details')) return;
+  e.preventDefault();
+  if (current === 'start' && !$('btn-start').disabled) runSession();
+  else if (current === 'result') reset();
+});
 
 (async () => {
-  const [story, print] = await Promise.all([loadImg('frame.png'), loadImg('frame-print.png')]);
+  // bingkai cadangan memakai font kartu; tunggu termuat (font lokal, tidak butuh internet)
+  await Promise.all([document.fonts.load('600 60px Cinzel'), document.fonts.load('600 24px "Instrument Sans"')]).catch(() => {});
+  const [story, print, kv, sky] = await Promise.all([loadImg('frame.png'), loadImg('frame-print.png'), loadImg('brand/dayspring.jpg'), loadImg('brand/sky.svg')]);
+  Object.assign(brand, { kv, sky });
   frames.story = story || fallbackStoryFrame();
   frames.print = print || fallbackPrintFrame();
   $('btn-start').disabled = false;
+  $('btn-start').focus({ preventScroll: true });
+  warmCamera();
 })();
 </script>
 </body>

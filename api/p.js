@@ -13,12 +13,13 @@ module.exports = async (req, res) => {
   res.setHeader('Cache-Control', 'private, no-store');
   res.setHeader('X-Robots-Tag', 'noindex, nofollow');
 
+  const event = process.env.EVENT_NAME || 'Photobooth';
   if (!ID_RE.test(id || '')) {
     res.statusCode = 404;
-    return res.end('<meta charset="utf-8"><p style="font-family:system-ui;padding:2rem">Link tidak valid.</p>');
+    return res.end(render.renderMessage({ event, title: 'Link ini <em>tidak dikenal.</em>',
+      body: 'Coba scan ulang QR di booth, atau pastikan link yang kamu buka lengkap.' }));
   }
 
-  const event = process.env.EVENT_NAME || 'Photobooth';
   const days = process.env.EXPIRE_DAYS !== undefined ? Number(process.env.EXPIRE_DAYS) : 7;
   try {
     const names = await storage.list(id);
@@ -29,6 +30,7 @@ module.exports = async (req, res) => {
   } catch (e) {
     console.error('halaman tamu gagal', e);
     res.statusCode = 500;
-    return res.end('<meta charset="utf-8"><p style="font-family:system-ui;padding:2rem">Terjadi kesalahan. Coba muat ulang sebentar lagi.</p>');
+    return res.end(render.renderMessage({ event, title: 'Sebentar, <em>ada gangguan.</em>',
+      body: 'Server sedang tidak bisa mengambil fotomu. Muat ulang halaman ini dalam satu menit.' }));
   }
 };

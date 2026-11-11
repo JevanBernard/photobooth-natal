@@ -15,16 +15,17 @@ window.BOOTH_CONFIG = {
   // ----- Story Instagram (9:16) -----
   // Foto digambar DI BAWAH frame.png, jadi lubang foto di PNG harus transparan.
   // Layout: 4 foto landscape (16:9, sama dengan hasil webcam) ditumpuk ke bawah, 1 kolom, di tengah.
-  // Area UI Instagram menutup sekitar y < 250 dan y > 1670; slot paling bawah masuk ~54 px ke area itu.
+  // Area UI Instagram menutup sekitar y < 250 dan y > 1670. Ruang di bawah slot terakhir (y 1680–1920)
+  // dipakai untuk logo The Dayspring pada bingkai bawaan.
   // Mau lebih aman atau lebih besar? Ubah y/w/h di bawah (jaga rasio w:h = 16:9 supaya foto tidak terpotong).
   story: {
     width: 1080,
     height: 1920,
     slots: [
-      { x: 212, y: 200,  w: 656, h: 369 },
-      { x: 212, y: 585,  w: 656, h: 369 },
-      { x: 212, y: 970,  w: 656, h: 369 },
-      { x: 212, y: 1355, w: 656, h: 369 }
+      { x: 220, y: 200,  w: 640, h: 360 },
+      { x: 220, y: 570,  w: 640, h: 360 },
+      { x: 220, y: 940,  w: 640, h: 360 },
+      { x: 220, y: 1310, w: 640, h: 360 }
     ]
   },
 

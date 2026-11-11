@@ -1,0 +1,2 @@
+Cinzel — Copyright 2020 The Cinzel Project Authors. Instrument Sans — Copyright 2022 The Instrument Sans Project Authors.
+Keduanya berlisensi SIL Open Font License 1.1 (https://openfontlicense.org). Diambil dari paket @fontsource-variable.

@@ -37,7 +37,7 @@ Kalau `public/frame.png` belum ada, kiosk memakai frame polos sementara.
 
 Template panduan ada di folder `desain-template/`:
 
-- **Story:** `frame.png`, 1080×1920 px, simpan di `public/`. Empat lubang foto harus **transparan** dan posisinya sama dengan di `config.js` (default: 460×560 px di x=60/560, y=300/900). Hindari teks/logo penting di y<250 dan y>1670 karena tertutup tampilan Instagram.
+- **Story:** `frame.png`, 1080×1920 px, simpan di `public/`. Empat lubang foto harus **transparan** dan posisinya sama dengan di `config.js` (default: 4 lubang 640×360 px ditumpuk di x=220, y=200/570/940/1310). Hindari teks/logo penting di y<250 dan y>1670 karena tertutup tampilan Instagram.
 - **Cetak:** `frame-print.png`, 1800×1200 px, simpan di `public/`. Bagian tengah transparan; isi bingkai/logo di tepi. Kalau file ini tidak ada, dipakai bingkai putih tipis.
 
 Kalau desainmu memakai ukuran slot lain, ubah koordinat `story.slots` di `public/config.js`.
